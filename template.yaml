@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  streamsimulator
+  Non-production code
+
+Resources:
+
+  TestStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: KinesisTest
+      ShardCount: 1
+  
+  TestConsumer:
+    Type: AWS::Kinesis::StreamConsumer
+    Properties:
+      ConsumerName: TestConsumer
+      StreamARN: !GetAtt TestStream.Arn
+      
+  SaveRecords:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: save_records/
+      AutoPublishAlias: TESTING
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
+      Policies:
+        - CloudWatchPutMetricPolicy: {}
+        - DynamoDBWritePolicy:
+            TableName: !Ref TestResultsTable
+        - CloudWatchLambdaInsightsExecutionRolePolicy
+      Environment:
+        Variables:
+          TableName: !Ref TestResultsTable
+          LAMBDA_INSIGHTS_LOG_LEVEL: info
+      Events:
+        KinesisEvent:
+          Type: Kinesis
+          Properties:
+            Stream: !Ref TestConsumer
+            StartingPosition: LATEST
+          
+  TestResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TestResults
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        -
+          AttributeName: TestRun
+          AttributeType: S
+        -
+          AttributeName: SequenceNumber
+          AttributeType: S
+      KeySchema:
+        - 
+          AttributeName: TestRun
+          KeyType: HASH
+        -
+          AttributeName: SequenceNumber
+          KeyType: RANGE
+
+Outputs:
+  TestStream:
+    Description: "Kinesis Stream Name"
+    Value: !Ref TestStream
+  ConsumerArn:
+    Description: "Kinesis Consumer ARN"
+    Value: !Ref TestConsumer
+  TestingTable:
+    Description: "DynamoDB table for testing results"
+    Value: !Ref TestResultsTable
+  SaveRecordsFunction:
+    Description: "Lambda function to save records"
+    Value: !Ref SaveRecords
+
